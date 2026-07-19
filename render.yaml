@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: orbit-ai-chatbot
+    runtime: python
+    buildCommand: pip install -r requirements-production.txt && python manage.py collectstatic --noinput && python manage.py migrate
+    startCommand: gunicorn chatbot.wsgi:application
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "false"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: COHERE_API_KEY
+        sync: false

@@ -1,0 +1,10 @@
+# Minimal, portable dependencies for deployment. Do not use a full `pip freeze`
+# export here: it can include platform-specific packages unrelated to this app.
+Django>=5.2,<6.0
+python-dotenv>=1.0
+langchain-groq>=0.3,<1.0
+cohere>=5.0
+chromadb>=1.0
+pypdf>=5.0
+whitenoise>=6.0
+gunicorn>=23.0
