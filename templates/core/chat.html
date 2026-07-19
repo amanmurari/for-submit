@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} - Orbit AI{% endblock %}
+{% block content %}
+<main class="page">
+  <a class="back-link" href="{% url 'project_detail' project.id %}">Back to {{ project.name }}</a>
+  <section class="card chat-shell">
+    <aside class="chat-sidebar"><div class="chat-sidebar-head"><h2>Conversations</h2><a href="{% url 'chat' project.id %}" class="button small">+ New</a></div>{% for item in conversations %}<a class="conversation-link" href="{% url 'chat_conversation' project.id item.id %}">{{ item.title }}</a>{% empty %}<p class="muted" style="font-size:13px">No conversations yet.</p>{% endfor %}</aside>
+    <section class="chat-main">
+      <header class="chat-heading"><h1>{{ project.name }}</h1><p>AI assistant - uses your selected prompt and knowledge base</p></header>
+      <div class="messages" id="message-list">{% if conversation %}{% for message in conversation.messages.all %}<div class="message {{ message.role }}"><strong>{{ message.get_role_display }}</strong>{{ message.content }}</div>{% endfor %}{% else %}<div class="empty-chat"><div><h2 style="color:var(--ink);font-size:18px">Start a new conversation</h2><p>Choose a saved prompt (optional), then ask about your documents.</p></div></div>{% endif %}</div>
+      <form class="composer" id="chat-form" method="post" action="{% if conversation %}{% url 'chat_conversation' project.id conversation.id %}{% else %}{% url 'chat' project.id %}{% endif %}">{% csrf_token %}<div style="flex:1;display:grid;gap:7px"><select name="prompt_id" aria-label="Saved prompt"><option value="">No saved prompt</option>{% for prompt in prompts %}<option value="{{ prompt.id }}" {% if selected_prompt and selected_prompt.id == prompt.id %}selected{% endif %}>Use prompt: {{ prompt.title }}</option>{% endfor %}</select><textarea name="message" placeholder="Ask about your knowledge base..." required></textarea></div><button type="submit">Send</button></form>
+    </section>
+  </section>
+</main>
+<script>
+const messages = document.getElementById('message-list');
+const form = document.getElementById('chat-form');
+const scroll = () => messages.scrollTop = messages.scrollHeight;
+const appendMessage = (role, text) => { messages.querySelector('.empty-chat')?.remove(); const item = document.createElement('div'); item.className = `message ${role}`; const label = document.createElement('strong'); label.textContent = role === 'user' ? 'User' : 'Assistant'; item.append(label, document.createTextNode(text)); messages.append(item); scroll(); };
+const addTyping = () => { const item = document.createElement('div'); item.className = 'message assistant typing'; item.setAttribute('aria-label', 'Assistant is thinking'); item.innerHTML = '<i></i><i></i><i></i>'; messages.append(item); scroll(); return item; };
+scroll();
+form?.addEventListener('submit', async (event) => { event.preventDefault(); const textarea = form.elements.message, button = form.querySelector('button[type="submit"]'), text = textarea.value.trim(); if (!text || button.disabled) return; const formData = new FormData(form); appendMessage('user', text); const typing = addTyping(); textarea.value = ''; button.disabled = true; button.textContent = 'Thinking...'; try { const response = await fetch(form.action, {method: 'POST', body: formData, headers: {'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json'}}); const data = await response.json(); if (!response.ok) throw new Error(data.answer || 'Unable to send your message.'); typing.remove(); appendMessage('assistant', data.answer); if (data.chat_url) { form.action = data.chat_url; history.replaceState(null, '', data.chat_url); } } catch (error) { typing.remove(); appendMessage('assistant', error.message || 'Unable to send your message.'); } finally { button.disabled = false; button.textContent = 'Send'; textarea.focus(); } });
+</script>
+{% endblock %}
