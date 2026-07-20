@@ -120,7 +120,7 @@ def retrieve_project_context(project, query, limit=4):
     return "\n\n".join(f"[Source: {metadata['source']}]\n{document}" for document, metadata in zip(documents, metadatas))
 
 
-def generate_response(project, messages, selected_prompt=None):
+def generate_response(project, messages, selected_prompt=None, use_knowledge_base=True):
     """Generate a response with LangChain's official Groq integration."""
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
@@ -129,7 +129,7 @@ def generate_response(project, messages, selected_prompt=None):
     if selected_prompt:
         instructions += f"\n\nSelected saved prompt — {selected_prompt.title}:\n{selected_prompt.content}"
     latest_question = next((message.content for message in reversed(list(messages)) if message.role == "user"), "")
-    if latest_question:
+    if use_knowledge_base and latest_question:
         try:
             context = retrieve_project_context(project, latest_question)
         except KnowledgeBaseError:

@@ -87,21 +87,38 @@ def add_prompt(request,project_id):
 @require_POST
 def upload_file(request, project_id):
     project = owned_project(request, project_id)
+    is_async = request.headers.get("X-Requested-With") == "XMLHttpRequest"
     uploaded = request.FILES.get("file")
     if not uploaded:
+        if is_async:
+            return JsonResponse({"ok": False, "error": "Choose a file first."}, status=400)
         messages.error(request, "Choose a file first.")
     elif uploaded.size > 20 * 1024 * 1024:
+        if is_async:
+            return JsonResponse({"ok": False, "error": "Files must be 20 MB or smaller."}, status=400)
         messages.error(request, "Files must be 20 MB or smaller.")
     else:
         content = uploaded.read()
+        # Save the Django record quickly; embedding can take longer and must not
+        # keep a SQLite transaction open.
+        with transaction.atomic():
+            uploaded.seek(0)
+            project_file = ProjectFile.objects.create(project=project, file=uploaded, original_name=uploaded.name)
         try:
-            with transaction.atomic():
-                uploaded.seek(0)
-                project_file = ProjectFile.objects.create(project=project, file=uploaded, original_name=uploaded.name)
-                chunk_count = index_file(project_file, content)
+            chunk_count = index_file(project_file, content)
         except KnowledgeBaseError as exc:
+            project_file.delete()
+            if is_async:
+                return JsonResponse({"ok": False, "error": str(exc)}, status=502)
             messages.error(request, str(exc))
         else:
+            if is_async:
+                return JsonResponse({
+                    "ok": True,
+                    "name": project_file.original_name,
+                    "url": project_file.file.url,
+                    "chunk_count": chunk_count,
+                })
             messages.success(request, f"File added to the knowledge base ({chunk_count} searchable sections).")
     return redirect("project_detail", project_id=project.id)
 
@@ -119,6 +136,7 @@ def chat(request, project_id, conversation_id=None):
         selected_prompt = project.prompts.filter(id=selected_prompt_id).first()
     if request.method == "POST":
         is_async = request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        use_knowledge_base = request.POST.get("use_knowledge_base") == "on"
         content = request.POST.get("message", "").strip()
         if not content:
             messages.error(request, "Enter a message.")
@@ -129,7 +147,12 @@ def chat(request, project_id, conversation_id=None):
                 conversation = conversation or Conversation.objects.create(project=project, title=content[:80])
                 Message.objects.create(conversation=conversation, role=Message.Role.USER, content=content)
             try:
-                answer = generate_response(project, conversation.messages.all(), selected_prompt=selected_prompt)
+                answer = generate_response(
+                    project,
+                    conversation.messages.all(),
+                    selected_prompt=selected_prompt,
+                    use_knowledge_base=use_knowledge_base,
+                )
             except LLMServiceError as exc:
                 Message.objects.create(conversation=conversation, role=Message.Role.ASSISTANT, content=str(exc))
                 conversation.save(update_fields=["updated_at"])
